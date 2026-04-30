@@ -1,0 +1,6 @@
+{
+  "name": "eCommerce Content AI",
+  "description": "Generate product descriptions, ad copy, and optimize product titles using Google Gemini.",
+  "requestFramePermissions": [],
+  "majorCapabilities": []
+}
