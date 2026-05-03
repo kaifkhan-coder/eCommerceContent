@@ -1,6 +1,6 @@
-import { useState } from 'react';
+import { useState, useRef } from 'react';
 import { motion, AnimatePresence } from 'motion/react';
-import { Sparkles, Copy, Check, ShoppingBag, Type, Hash, AlignLeft, AlertCircle } from 'lucide-react';
+import { Sparkles, Copy, Check, ShoppingBag, Type, Hash, AlignLeft, AlertCircle, Image as ImageIcon, UploadCloud, X } from 'lucide-react';
 import { ContentMode, generateContent } from './lib/gemini';
 
 export default function App() {
@@ -8,6 +8,10 @@ export default function App() {
   const [productName, setProductName] = useState('');
   const [features, setFeatures] = useState('');
   const [audience, setAudience] = useState('');
+  const [mrp, setMrp] = useState('');
+  const [sellingPrice, setSellingPrice] = useState('');
+  const [image, setImage] = useState<{ url: string; file: File; base64Data: string; mimeType: string } | null>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
   
   const [isGenerating, setIsGenerating] = useState(false);
   const [result, setResult] = useState('');
@@ -15,9 +19,16 @@ export default function App() {
   const [copied, setCopied] = useState(false);
 
   const handleGenerate = async () => {
-    if (!productName.trim() || !features.trim()) {
-      setError('Product Name and Features are required.');
-      return;
+    if (mode === 'image-analysis') {
+      if (!image) {
+        setError('Please upload an image to analyze.');
+        return;
+      }
+    } else {
+      if (!productName.trim() || !features.trim()) {
+        setError('Product Name and Features are required.');
+        return;
+      }
     }
     
     setError('');
@@ -26,13 +37,39 @@ export default function App() {
     setCopied(false);
     
     try {
-      const output = await generateContent(mode, productName, features, audience);
+      const imageData = image ? { mimeType: image.mimeType, data: image.base64Data } : undefined;
+      const output = await generateContent(mode, productName, features, audience, mrp, sellingPrice, imageData);
       setResult(output);
     } catch (err: any) {
       setError(err.message || 'Something went wrong.');
     } finally {
       setIsGenerating(false);
     }
+  };
+
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (!file.type.startsWith('image/')) {
+       setError('Please upload a valid image file.');
+       return;
+    }
+
+    const url = URL.createObjectURL(file);
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const result = reader.result as string;
+      const base64Data = result.split(',')[1];
+      setImage({
+        url,
+        file,
+        base64Data,
+        mimeType: file.type
+      });
+      setError('');
+    };
+    reader.readAsDataURL(file);
   };
 
   const handleCopy = () => {
@@ -46,6 +83,7 @@ export default function App() {
     { id: 'description', label: 'Description', icon: AlignLeft },
     { id: 'ad', label: 'Ad Copy', icon: Hash },
     { id: 'title', label: 'Title Optimizer', icon: Type },
+    { id: 'image-analysis', label: 'Image Analyzer', icon: ImageIcon },
   ];
 
   return (
@@ -78,7 +116,7 @@ export default function App() {
               
               <div>
                 <h2 className="text-xs font-semibold uppercase tracking-widest text-indigo-400 mb-4">What are you creating?</h2>
-                <div className="grid grid-cols-2 lg:grid-cols-1 xl:grid-cols-2 gap-2">
+                <div className="grid grid-cols-2 lg:grid-cols-2 gap-2">
                   {modes.map((m) => {
                     const Icon = m.icon;
                     const isActive = mode === m.id;
@@ -101,9 +139,50 @@ export default function App() {
               </div>
 
               <div className="space-y-5">
+                {mode === 'image-analysis' ? (
+                  <div>
+                    <label className="block text-xs font-medium text-slate-400 mb-2">
+                      PRODUCT IMAGE <span className="text-indigo-400">*</span>
+                    </label>
+                    
+                    {!image ? (
+                      <div 
+                        onClick={() => fileInputRef.current?.click()}
+                        className="w-full border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-lg p-8 flex flex-col items-center justify-center cursor-pointer transition-colors bg-slate-950/50 hover:bg-slate-900"
+                      >
+                        <UploadCloud className="w-8 h-8 text-slate-500 mb-3" />
+                        <p className="text-sm text-slate-400 text-center">
+                          Click to upload an image<br/>
+                          <span className="text-xs text-slate-600">JPG, PNG, WebP</span>
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="relative rounded-lg overflow-hidden border border-slate-700 bg-slate-950">
+                        <img src={image.url} alt="Uploaded product" className="w-full max-h-48 object-contain" />
+                        <button 
+                          onClick={() => {
+                            setImage(null);
+                            if (fileInputRef.current) fileInputRef.current.value = '';
+                          }}
+                          className="absolute top-2 right-2 p-1 bg-black/50 hover:bg-red-500 text-white rounded-full transition-colors backdrop-blur-sm"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      </div>
+                    )}
+                    <input 
+                      type="file" 
+                      ref={fileInputRef} 
+                      onChange={handleImageUpload} 
+                      accept="image/*" 
+                      className="hidden" 
+                    />
+                  </div>
+                ) : null}
+
                 <div>
                   <label htmlFor="productName" className="block text-xs font-medium text-slate-400 mb-2">
-                    PRODUCT NAME <span className="text-indigo-400">*</span>
+                    PRODUCT NAME {mode !== 'image-analysis' && <span className="text-indigo-400">*</span>}
                   </label>
                   <input
                     id="productName"
@@ -117,7 +196,7 @@ export default function App() {
 
                 <div>
                   <label htmlFor="features" className="block text-xs font-medium text-slate-400 mb-2">
-                    KEY FEATURES / BENEFITS <span className="text-indigo-400">*</span>
+                    KEY FEATURES / BENEFITS {mode !== 'image-analysis' && <span className="text-indigo-400">*</span>}
                   </label>
                   <textarea
                     id="features"
@@ -142,11 +221,40 @@ export default function App() {
                     className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600 text-slate-200"
                   />
                 </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label htmlFor="mrp" className="block text-xs font-medium text-slate-400 mb-2">
+                      MRP <span className="text-slate-600 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      id="mrp"
+                      type="text"
+                      value={mrp}
+                      onChange={(e) => setMrp(e.target.value)}
+                      placeholder="e.g. $99"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600 text-slate-200"
+                    />
+                  </div>
+                  <div>
+                    <label htmlFor="sellingPrice" className="block text-xs font-medium text-slate-400 mb-2">
+                      SELLING PRICE <span className="text-slate-600 font-normal">(Optional)</span>
+                    </label>
+                    <input
+                      id="sellingPrice"
+                      type="text"
+                      value={sellingPrice}
+                      onChange={(e) => setSellingPrice(e.target.value)}
+                      placeholder="e.g. $79"
+                      className="w-full bg-slate-950 border border-slate-800 rounded-lg px-4 py-3 text-sm focus:outline-none focus:border-indigo-500 transition-colors placeholder:text-slate-600 text-slate-200"
+                    />
+                  </div>
+                </div>
               </div>
 
               <button
                 onClick={handleGenerate}
-                disabled={isGenerating || !productName.trim() || !features.trim()}
+                disabled={isGenerating || (mode === 'image-analysis' ? !image : (!productName.trim() || !features.trim()))}
                 className="w-full py-4 mt-2 bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-500 hover:to-purple-500 text-white rounded-xl font-bold text-sm shadow-lg shadow-indigo-500/20 transition-all flex items-center justify-center gap-2 disabled:from-slate-800 disabled:to-slate-800 disabled:text-slate-500 disabled:shadow-none disabled:cursor-not-allowed group"
               >
                 {isGenerating ? (
